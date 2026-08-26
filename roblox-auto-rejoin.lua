@@ -11,6 +11,8 @@ local config = {
   refresh_seconds = 90,
   app_package = "com.roblox.client",
   grid_columns = 2,
+  auto_grid_columns = 2,
+  auto_grid_rows = 2,
 }
 
 local color = {
@@ -58,7 +60,7 @@ local function write_banner()
   io.write(color.cyan .. "  M M M  O   O C     HHHHH   I   W W W\n" .. color.reset)
   io.write(color.cyan .. "  M   M  O   O C     H   H   I   WW WW\n" .. color.reset)
   io.write(color.cyan .. "  M   M   OOO   CCCC H   H IIIII W   W\n" .. color.reset)
-  io.write(color.gray .. "  Version 1.6.0 | " .. APP_NAME .. "\n\n" .. color.reset)
+  io.write(color.gray .. "  Version 1.8.0 | " .. APP_NAME .. "\n\n" .. color.reset)
   io.write(color.gray .. "  --------------------------------------------------------\n\n" .. color.reset)
 end
 
@@ -100,6 +102,16 @@ local function load_config()
       if columns and columns >= 1 and columns <= 3 and columns == math.floor(columns) then
         config.grid_columns = columns
       end
+    elseif key == "AUTO_GRID_COLUMNS" then
+      local columns = tonumber(value)
+      if columns and columns >= 1 and columns <= 3 and columns == math.floor(columns) then
+        config.auto_grid_columns = columns
+      end
+    elseif key == "AUTO_GRID_ROWS" then
+      local rows = tonumber(value)
+      if rows and rows >= 1 and rows <= 3 and rows == math.floor(rows) then
+        config.auto_grid_rows = rows
+      end
     end
   end
   file:close()
@@ -119,6 +131,8 @@ local function save_config()
   file:write("REFRESH_SECONDS=", tostring(config.refresh_seconds), "\n")
   file:write("APP_PACKAGE=", config.app_package, "\n")
   file:write("GRID_COLUMNS=", tostring(config.grid_columns), "\n")
+  file:write("AUTO_GRID_COLUMNS=", tostring(config.auto_grid_columns), "\n")
+  file:write("AUTO_GRID_ROWS=", tostring(config.auto_grid_rows), "\n")
   file:close()
   command_ok("chmod 600 " .. shell_quote(temporary_file))
 
@@ -240,6 +254,42 @@ local function get_roblox_tasks()
   return tasks
 end
 
+local function get_third_party_packages()
+  local packages = {}
+  if not command_exists("pm") then
+    return packages
+  end
+  local output = capture_command("pm list packages -3 2>/dev/null")
+  for package_id in output:gmatch("package:([%w%._]+)") do
+    packages[package_id] = true
+  end
+  return packages
+end
+
+local function get_visible_user_tasks()
+  local output = capture_command("su -c " .. shell_quote("dumpsys activity activities 2>/dev/null"))
+  local user_packages = get_third_party_packages()
+  local tasks, seen = {}, {}
+  local excluded_packages = {
+    ["com.termux"] = true,
+    ["com.termux.api"] = true,
+  }
+
+  for line in output:gmatch("[^\r\n]+") do
+    local task_id = line:match("Task%{.-#(%d+)")
+    local package_id = line:match("A=([%w%._]+)")
+    local is_visible = line:find(" visible=true", 1, true) ~= nil
+      or line:find(" isVisible=true", 1, true) ~= nil
+    if task_id and package_id and is_visible
+        and user_packages[package_id] and not excluded_packages[package_id]
+        and not seen[task_id] then
+      seen[task_id] = true
+      table.insert(tasks, { id = task_id, package_id = package_id })
+    end
+  end
+  return tasks
+end
+
 local function show_roblox_tasks(tasks)
   if #tasks == 0 then
     io.write(color.yellow .. "  Task Roblox belum terdeteksi. Buka dulu semua jendela Roblox.\n" .. color.reset)
@@ -322,14 +372,24 @@ local function apply_auto_grid(columns, rows)
   -- Beri Android waktu menambahkan task saat aplikasi baru saja dibuka.
   sleep(3)
   local tasks = get_roblox_tasks()
+  local source = "task Roblox"
+  if #tasks == 0 then
+    -- Fallback untuk aplikasi clone/window manager yang package-nya tidak memuat roblox.
+    tasks = get_visible_user_tasks()
+    source = "task aplikasi pengguna yang terlihat"
+  end
   local task_ids = {}
   for _, task in ipairs(tasks) do
     table.insert(task_ids, task.id)
   end
   if #task_ids == 0 then
-    return false, "Task Roblox belum terdeteksi. Buka aplikasinya lalu coba menu Auto Grid lagi."
+    return false, "Tidak ada task aplikasi yang terlihat dan bisa dijadikan target grid."
   end
-  return apply_window_grid(task_ids, columns, rows)
+  local success, message = apply_window_grid(task_ids, columns, rows)
+  if success then
+    message = message .. " Sumber: " .. source .. "."
+  end
+  return success, message
 end
 
 local function root_window_grid()
@@ -396,24 +456,90 @@ end
 local function run_auto_grid_open_apps()
   write_banner()
   io.write(color.cyan .. "  AUTO GRID JENDELA ROBLOX\n" .. color.reset)
-  io.write(color.gray .. "  Menata semua task Roblox yang sudah terbuka dengan root.\n" .. color.reset)
-  io.write(color.yellow .. "  Contoh 2x2 berarti 2 kolom dan 2 baris (maks. 4 jendela).\n\n" .. color.reset)
+  io.write(color.gray .. "  Menata task Roblox atau aplikasi pengguna yang terlihat dengan root.\n" .. color.reset)
+  io.write(color.yellow .. "  Layout tersimpan: " .. config.auto_grid_columns .. "x" .. config.auto_grid_rows
+    .. " (maks. " .. (config.auto_grid_columns * config.auto_grid_rows) .. " jendela).\n" .. color.reset)
+  io.write(color.gray .. "  Ubah layout melalui menu Auto Grid Settings.\n\n" .. color.reset)
 
-  local columns, rows = parse_grid_layout(prompt("  Layout grid [contoh 2x2]: "))
-  if not columns then
-    io.write(color.red .. "  Format tidak valid. Gunakan 1x1 sampai 3x3, contoh 2x2.\n" .. color.reset)
-    pause()
-    return
-  end
-  if prompt("  Tata otomatis ke grid " .. columns .. "x" .. rows .. "? ketik YA: ") ~= "YA" then
+  if prompt("  Tata otomatis ke grid " .. config.auto_grid_columns .. "x" .. config.auto_grid_rows .. "? ketik YA: ") ~= "YA" then
     return
   end
 
-  local success, message = apply_auto_grid(columns, rows)
+  local success, message = apply_auto_grid(config.auto_grid_columns, config.auto_grid_rows)
   if success then
     io.write(color.green .. "  " .. message .. "\n" .. color.reset)
   else
     io.write(color.red .. "  " .. message .. "\n" .. color.reset)
+  end
+  pause()
+end
+
+local function auto_grid_settings()
+  while true do
+    write_banner()
+    local layout = config.auto_grid_columns .. "x" .. config.auto_grid_rows
+    local capacity = config.auto_grid_columns * config.auto_grid_rows
+    io.write(color.cyan .. "  AUTO GRID SETTINGS\n" .. color.reset)
+    io.write(color.gray .. "  Layout ini dipakai oleh menu 10 dan menu 11.\n" .. color.reset)
+    io.write(color.yellow .. "  Layout aktif: " .. layout .. " (maks. " .. capacity .. " jendela)\n\n" .. color.reset)
+    io.write(color.green .. " 1)" .. color.white .. " Ubah layout grid (contoh 2x2)\n" .. color.reset)
+    io.write(color.green .. " 2)" .. color.white .. " Kembalikan ke 2x2\n" .. color.reset)
+    io.write(color.red .. " 3)" .. color.white .. " Kembali\n\n" .. color.reset)
+
+    local choice = prompt(color.cyan .. "[?] Pilih [1-3]: " .. color.reset)
+    if choice == "1" then
+      local columns, rows = parse_grid_layout(prompt("  Layout baru [1x1 sampai 3x3, contoh 2x2]: "))
+      if not columns then
+        io.write(color.red .. "  Format tidak valid. Gunakan contoh 2x2, 3x2, atau 3x3.\n" .. color.reset)
+      else
+        config.auto_grid_columns = columns
+        config.auto_grid_rows = rows
+        local saved, err = save_config()
+        if saved then
+          io.write(color.green .. "  Layout Auto Grid disimpan: " .. columns .. "x" .. rows .. ".\n" .. color.reset)
+        else
+          io.write(color.red .. "  Gagal menyimpan layout: " .. tostring(err) .. "\n" .. color.reset)
+        end
+      end
+      pause()
+    elseif choice == "2" then
+      config.auto_grid_columns = 2
+      config.auto_grid_rows = 2
+      local saved, err = save_config()
+      if saved then
+        io.write(color.green .. "  Layout Auto Grid dikembalikan ke 2x2.\n" .. color.reset)
+      else
+        io.write(color.red .. "  Gagal menyimpan layout: " .. tostring(err) .. "\n" .. color.reset)
+      end
+      pause()
+    elseif choice == "3" then
+      return
+    else
+      io.write(color.red .. "  Pilihan tidak tersedia.\n" .. color.reset)
+      sleep(1)
+    end
+  end
+end
+
+local function show_visible_user_tasks()
+  write_banner()
+  io.write(color.cyan .. "  DETECT VISIBLE APP TASKS\n" .. color.reset)
+  io.write(color.gray .. "  Menampilkan task aplikasi pengguna yang sedang terlihat; tidak mengubah jendela.\n\n" .. color.reset)
+
+  if not has_root_access() then
+    io.write(color.red .. "  Akses root melalui su tidak tersedia atau ditolak.\n" .. color.reset)
+    pause()
+    return
+  end
+
+  local tasks = get_visible_user_tasks()
+  if #tasks == 0 then
+    io.write(color.yellow .. "  Tidak ada task pengguna terlihat yang dapat dibaca dari ROM ini.\n" .. color.reset)
+  else
+    io.write(color.green .. "  Ditemukan " .. #tasks .. " task terlihat:\n\n" .. color.reset)
+    for index, task in ipairs(tasks) do
+      io.write(color.green .. string.format("  %2d) Task %-6s %s\n", index, task.id, task.package_id) .. color.reset)
+    end
   end
   pause()
 end
@@ -620,16 +746,10 @@ local function run_auto_detected_apps()
     io.write(color.green .. string.format("  %2d) %s\n", index, package_id) .. color.reset)
   end
   io.write("\n")
-  local layout_input = prompt("  Auto grid setelah semua terbuka [contoh 2x2 / Enter = lewati]: ")
-  local grid_columns, grid_rows
-  if layout_input ~= "" then
-    grid_columns, grid_rows = parse_grid_layout(layout_input)
-    if not grid_columns then
-      io.write(color.red .. "  Format grid tidak valid. Gunakan contoh 2x2 atau tekan Enter untuk lewati.\n" .. color.reset)
-      pause()
-      return
-    end
-  end
+  local use_auto_grid = prompt(
+    "  Terapkan Auto Grid tersimpan (" .. config.auto_grid_columns .. "x" .. config.auto_grid_rows
+      .. ") setelah semua terbuka? ketik YA / Enter = lewati: "
+  ) == "YA"
   if prompt("  Buka " .. #packages .. " aplikasi dengan jeda 60 detik? ketik YA: ") ~= "YA" then
     return
   end
@@ -646,9 +766,9 @@ local function run_auto_detected_apps()
     end
   end
 
-  if grid_columns then
-    io.write(color.gray .. "\n  Mendeteksi task untuk auto grid " .. grid_columns .. "x" .. grid_rows .. "...\n" .. color.reset)
-    local success, message = apply_auto_grid(grid_columns, grid_rows)
+  if use_auto_grid then
+    io.write(color.gray .. "\n  Mendeteksi task untuk auto grid " .. config.auto_grid_columns .. "x" .. config.auto_grid_rows .. "...\n" .. color.reset)
+    local success, message = apply_auto_grid(config.auto_grid_columns, config.auto_grid_rows)
     if success then
       io.write(color.green .. "  " .. message .. "\n" .. color.reset)
     else
@@ -785,11 +905,13 @@ local function show_help()
   io.write(color.gray .. "  - Monitor membuka game jika proses aplikasi telah tertutup.\n" .. color.reset)
   io.write(color.gray .. "  - Auto-rejoin test membuka ulang game berdasarkan timer, bukan mendeteksi kick.\n" .. color.reset)
   io.write(color.gray .. "  - Pastikan Roblox terpasang dan akun sudah masuk.\n" .. color.reset)
-  io.write(color.gray .. "  - Root Window Grid hanya mengatur task Android yang telah terbuka.\n" .. color.reset)
+  io.write(color.gray .. "  - Root Window Grid mengatur task Roblox; bila tidak terbaca, skrip mencoba\n" .. color.reset)
+  io.write(color.gray .. "    task aplikasi pengguna yang sedang terlihat (bukan Termux/komponen sistem).\n" .. color.reset)
   io.write(color.gray .. "    Jika ROM menolak resize, aktifkan freeform window pada pengaturan ROM Anda.\n" .. color.reset)
   io.write(color.gray .. "  - Auto Detect Roblox Apps menemukan package dengan nama roblox/mercy, lalu\n" .. color.reset)
-  io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik dan dapat menerapkan grid 2x2.\n" .. color.reset)
+  io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik dan dapat menerapkan Auto Grid tersimpan.\n" .. color.reset)
   io.write(color.gray .. "  - Detect Roblox Apps hanya melakukan scan package tanpa membuka aplikasi.\n" .. color.reset)
+  io.write(color.gray .. "  - Auto Grid Settings menyimpan layout 1x1 sampai 3x3 untuk menu Auto Grid.\n" .. color.reset)
   io.write(color.gray .. "  - Untuk rejoin dari pengalaman Anda sendiri, gunakan TeleportService di Roblox Studio.\n" .. color.reset)
   pause()
 end
@@ -810,12 +932,15 @@ while true do
   io.write(color.green .. " 8)" .. color.white .. " Grid Dashboard & Settings\n" .. color.reset)
   io.write(color.green .. " 9)" .. color.white .. " Root Window Grid (Experimental)\n" .. color.reset)
   io.write(color.green .. "10)" .. color.white .. " Auto Detect Roblox Apps (60 sec delay)\n" .. color.reset)
-  io.write(color.green .. "11)" .. color.white .. " Auto Grid Open Roblox Windows\n" .. color.reset)
+  io.write(color.green .. "11)" .. color.white .. " Auto Grid Open App Windows\n" .. color.reset)
   io.write(color.green .. "12)" .. color.white .. " Detect Roblox Apps (Scan Only)\n" .. color.reset)
-  io.write(color.red .. "13)" .. color.white .. " Exit\n\n" .. color.reset)
-  io.write(color.gray .. " Place ID: " .. place_label .. " | Interval: " .. config.refresh_seconds .. " sec | Grid: " .. config.grid_columns .. " kolom\n\n" .. color.reset)
+  io.write(color.green .. "13)" .. color.white .. " Detect Visible App Tasks (Scan Only)\n" .. color.reset)
+  io.write(color.green .. "14)" .. color.white .. " Auto Grid Settings (Layout)\n" .. color.reset)
+  io.write(color.red .. "15)" .. color.white .. " Exit\n\n" .. color.reset)
+  io.write(color.gray .. " Place ID: " .. place_label .. " | Interval: " .. config.refresh_seconds
+    .. " sec | Auto Grid: " .. config.auto_grid_columns .. "x" .. config.auto_grid_rows .. "\n\n" .. color.reset)
 
-  local choice = prompt(color.cyan .. "[?] Enter your choice [1-13]: " .. color.reset)
+  local choice = prompt(color.cyan .. "[?] Enter your choice [1-15]: " .. color.reset)
   if choice == "1" then
     setup_termux_dependencies()
   elseif choice == "2" then
@@ -845,6 +970,10 @@ while true do
   elseif choice == "12" then
     show_detected_roblox_apps()
   elseif choice == "13" then
+    show_visible_user_tasks()
+  elseif choice == "14" then
+    auto_grid_settings()
+  elseif choice == "15" then
     os.exit(0)
   else
     io.write(color.red .. "  Pilihan tidak tersedia.\n" .. color.reset)
