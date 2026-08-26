@@ -26,6 +26,8 @@ Saat aplikasi terbuka:
    Roblox/clone yang namanya memuat `roblox` atau `mercy`, lalu membukanya satu per satu.
    Saat diminta layout, isi `2x2` agar task yang berhasil dideteksi dirapikan
    otomatis setelah semua aplikasi dibuka (memerlukan root dan dukungan freeform ROM).
+5. Pilih `12) Detect Roblox Apps (Scan Only)` bila hanya ingin melihat daftar package
+   Roblox/clone yang terdeteksi tanpa membuka aplikasinya.
 
 ## Memperbarui dari GitHub
 

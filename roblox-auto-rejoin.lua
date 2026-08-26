@@ -58,7 +58,7 @@ local function write_banner()
   io.write(color.cyan .. "  M M M  O   O C     HHHHH   I   W W W\n" .. color.reset)
   io.write(color.cyan .. "  M   M  O   O C     H   H   I   WW WW\n" .. color.reset)
   io.write(color.cyan .. "  M   M   OOO   CCCC H   H IIIII W   W\n" .. color.reset)
-  io.write(color.gray .. "  Version 1.5.0 | " .. APP_NAME .. "\n\n" .. color.reset)
+  io.write(color.gray .. "  Version 1.6.0 | " .. APP_NAME .. "\n\n" .. color.reset)
   io.write(color.gray .. "  --------------------------------------------------------\n\n" .. color.reset)
 end
 
@@ -659,6 +659,24 @@ local function run_auto_detected_apps()
   pause()
 end
 
+local function show_detected_roblox_apps()
+  write_banner()
+  local packages = get_roblox_packages()
+  io.write(color.cyan .. "  DETECT ROBLOX APPS\n" .. color.reset)
+  io.write(color.gray .. "  Scan ini hanya menampilkan package; aplikasi tidak akan dibuka.\n\n" .. color.reset)
+
+  if #packages == 0 then
+    io.write(color.yellow .. "  Tidak ada package dengan nama roblox atau mercy yang terdeteksi.\n" .. color.reset)
+    io.write(color.gray .. "  Package Roblox utama dapat diatur manual melalui menu 2.\n" .. color.reset)
+  else
+    io.write(color.green .. "  Ditemukan " .. #packages .. " aplikasi/package:\n\n" .. color.reset)
+    for index, package_id in ipairs(packages) do
+      io.write(color.green .. string.format("  %2d) %s\n", index, package_id) .. color.reset)
+    end
+  end
+  pause()
+end
+
 local function open_fallback_link()
   if not ensure_configured() then
     return false
@@ -771,6 +789,7 @@ local function show_help()
   io.write(color.gray .. "    Jika ROM menolak resize, aktifkan freeform window pada pengaturan ROM Anda.\n" .. color.reset)
   io.write(color.gray .. "  - Auto Detect Roblox Apps menemukan package dengan nama roblox/mercy, lalu\n" .. color.reset)
   io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik dan dapat menerapkan grid 2x2.\n" .. color.reset)
+  io.write(color.gray .. "  - Detect Roblox Apps hanya melakukan scan package tanpa membuka aplikasi.\n" .. color.reset)
   io.write(color.gray .. "  - Untuk rejoin dari pengalaman Anda sendiri, gunakan TeleportService di Roblox Studio.\n" .. color.reset)
   pause()
 end
@@ -792,10 +811,11 @@ while true do
   io.write(color.green .. " 9)" .. color.white .. " Root Window Grid (Experimental)\n" .. color.reset)
   io.write(color.green .. "10)" .. color.white .. " Auto Detect Roblox Apps (60 sec delay)\n" .. color.reset)
   io.write(color.green .. "11)" .. color.white .. " Auto Grid Open Roblox Windows\n" .. color.reset)
-  io.write(color.red .. "12)" .. color.white .. " Exit\n\n" .. color.reset)
+  io.write(color.green .. "12)" .. color.white .. " Detect Roblox Apps (Scan Only)\n" .. color.reset)
+  io.write(color.red .. "13)" .. color.white .. " Exit\n\n" .. color.reset)
   io.write(color.gray .. " Place ID: " .. place_label .. " | Interval: " .. config.refresh_seconds .. " sec | Grid: " .. config.grid_columns .. " kolom\n\n" .. color.reset)
 
-  local choice = prompt(color.cyan .. "[?] Enter your choice [1-12]: " .. color.reset)
+  local choice = prompt(color.cyan .. "[?] Enter your choice [1-13]: " .. color.reset)
   if choice == "1" then
     setup_termux_dependencies()
   elseif choice == "2" then
@@ -823,6 +843,8 @@ while true do
   elseif choice == "11" then
     run_auto_grid_open_apps()
   elseif choice == "12" then
+    show_detected_roblox_apps()
+  elseif choice == "13" then
     os.exit(0)
   else
     io.write(color.red .. "  Pilihan tidak tersedia.\n" .. color.reset)
