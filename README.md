@@ -22,6 +22,8 @@ Saat aplikasi terbuka:
 1. Pilih `1) Setup Termux & Dependencies` bila dependensi belum dipasang atau ingin menjalankan pengecekan ulang.
 2. Pilih `2) Setup / Edit Configuration`, lalu masukkan Place ID atau URL game Roblox.
 3. Pilih `3) Join Game Now` untuk membuka game.
+4. Pilih `10) Auto Detect Roblox Apps (60 sec delay)` untuk mendeteksi package
+   Roblox/clone yang namanya memuat `roblox` atau `mercy`, lalu membukanya satu per satu.
 
 ## Memperbarui dari GitHub
 
@@ -35,6 +37,8 @@ lua5.3 roblox-auto-rejoin.lua
 
 - Beri izin penyimpanan ketika `termux-setup-storage` meminta izin Android.
 - `tsu` ikut dipasang sesuai daftar dependensi, tetapi aplikasi ini tidak membutuhkan root.
+- Paket Python berat seperti `cryptography` tidak dipasang karena tidak diperlukan skrip ini
+  dan dapat lama di-compile pada Termux.
 - Auto-rejoin berbasis timer hanya mengirim kembali deep link game. Termux tidak dapat mendeteksi disconnect di dalam aplikasi Roblox.
 - Hentikan mode monitor atau timer dengan `Ctrl+C`.
 - Pada perangkat root, menu `9) Root Window Grid` dapat mencoba menata task Roblox

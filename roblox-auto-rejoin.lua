@@ -58,7 +58,7 @@ local function write_banner()
   io.write(color.cyan .. "  M M M  O   O C     HHHHH   I   W W W\n" .. color.reset)
   io.write(color.cyan .. "  M   M  O   O C     H   H   I   WW WW\n" .. color.reset)
   io.write(color.cyan .. "  M   M   OOO   CCCC H   H IIIII W   W\n" .. color.reset)
-  io.write(color.gray .. "  Version 1.3.0 | " .. APP_NAME .. "\n\n" .. color.reset)
+  io.write(color.gray .. "  Version 1.4.0 | " .. APP_NAME .. "\n\n" .. color.reset)
   io.write(color.gray .. "  --------------------------------------------------------\n\n" .. color.reset)
 end
 
@@ -434,7 +434,7 @@ local function setup_termux_dependencies()
   io.write(color.gray .. "  termux-setup-storage\n" .. color.reset)
   io.write(color.gray .. "  pkg update -y && pkg upgrade -y\n" .. color.reset)
   io.write(color.gray .. "  pkg install -y lua53 tsu python figlet android-tools sqlite git\n" .. color.reset)
-  io.write(color.gray .. "  pip install pyfiglet rich curl_cffi requests pycryptodome cryptography numpy Pillow\n\n" .. color.reset)
+  io.write(color.gray .. "  Paket Python tambahan tidak dipasang karena tidak diperlukan skrip ini.\n\n" .. color.reset)
   io.write(color.yellow .. "  termux-setup-storage akan meminta izin penyimpanan Android.\n" .. color.reset)
   io.write(color.yellow .. "  tsu dipasang sesuai permintaan, tetapi skrip ini tidak memerlukan root.\n\n" .. color.reset)
 
@@ -456,19 +456,11 @@ local function setup_termux_dependencies()
   end
   if not run_setup_step(
     "Memasang Lua, Python, Android tools, dan Git",
-    "pkg install -y lua53 tsu python figlet android-tools sqlite git rust clang"
+    "pkg install -y lua53 tsu python figlet android-tools sqlite git"
   ) then
     pause()
     return
   end
-  if not run_setup_step(
-    "Memasang paket Python",
-    "pip install pyfiglet rich curl_cffi requests pycryptodome cryptography numpy Pillow"
-  ) then
-    pause()
-    return
-  end
-
   io.write(color.green .. "\n  Semua dependensi berhasil diproses.\n" .. color.reset)
   pause()
 end
@@ -502,6 +494,98 @@ local function open_game()
     io.write(color.red .. "  Deep link Roblox tidak dapat dibuka.\n" .. color.reset)
   end
   return success
+end
+
+local function package_is_installed(package_id)
+  return valid_package_id(package_id)
+    and command_exists("pm")
+    and command_ok("pm path " .. shell_quote(package_id) .. " >/dev/null 2>&1")
+end
+
+local function get_roblox_packages()
+  local detected, seen = {}, {}
+  if not command_exists("pm") then
+    return detected
+  end
+
+  local output = capture_command("pm list packages -3 2>/dev/null")
+  for package_id in output:gmatch("package:([%w%._]+)") do
+    local normalized = package_id:lower()
+    -- Mencakup aplikasi Roblox resmi serta sebagian besar package clone yang umum.
+    if (normalized:find("roblox", 1, true) or normalized:find("mercy", 1, true))
+        and not seen[package_id] then
+      seen[package_id] = true
+      table.insert(detected, package_id)
+    end
+  end
+
+  -- Package yang disetel di menu konfigurasi selalu ikut bila masih terpasang.
+  if package_is_installed(config.app_package) and not seen[config.app_package] then
+    table.insert(detected, 1, config.app_package)
+  end
+  table.sort(detected)
+  return detected
+end
+
+local function launch_game_for_package(package_id)
+  local deep_link = "roblox://placeId=" .. config.place_id
+  if command_exists("am") then
+    local targeted = command_ok(
+      "am start -a android.intent.action.VIEW -d " .. shell_quote(deep_link)
+        .. " -p " .. shell_quote(package_id) .. " >/dev/null 2>&1"
+    )
+    if targeted then
+      return true
+    end
+    return command_ok(
+      "am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "
+        .. shell_quote(package_id) .. " >/dev/null 2>&1"
+    )
+  end
+  return false
+end
+
+local function run_auto_detected_apps()
+  local delay_seconds = 60
+  write_banner()
+  if not ensure_configured() then
+    return
+  end
+
+  local packages = get_roblox_packages()
+  io.write(color.cyan .. "  AUTO-DETECT ROBLOX APPS\n" .. color.reset)
+  io.write(color.gray .. "  Membuka aplikasi satu per satu dengan jeda " .. delay_seconds .. " detik.\n" .. color.reset)
+  io.write(color.yellow .. "  Pastikan semua clone Roblox sudah terpasang sebelum memulai.\n\n" .. color.reset)
+
+  if #packages == 0 then
+    io.write(color.red .. "  Tidak ada package Roblox yang terdeteksi.\n" .. color.reset)
+    io.write(color.gray .. "  Package yang namanya tidak mengandung roblox/mercy dapat diatur lewat menu 2.\n" .. color.reset)
+    pause()
+    return
+  end
+
+  for index, package_id in ipairs(packages) do
+    io.write(color.green .. string.format("  %2d) %s\n", index, package_id) .. color.reset)
+  end
+  io.write("\n")
+  if prompt("  Buka " .. #packages .. " aplikasi dengan jeda 60 detik? ketik YA: ") ~= "YA" then
+    return
+  end
+
+  for index, package_id in ipairs(packages) do
+    if launch_game_for_package(package_id) then
+      io.write(color.green .. string.format("  [%d/%d] Membuka %s\n", index, #packages, package_id) .. color.reset)
+    else
+      io.write(color.red .. string.format("  [%d/%d] Gagal membuka %s\n", index, #packages, package_id) .. color.reset)
+    end
+    if index < #packages then
+      io.write(color.gray .. "  Menunggu " .. delay_seconds .. " detik untuk aplikasi berikutnya (Ctrl+C untuk berhenti)...\n" .. color.reset)
+      sleep(delay_seconds)
+    end
+  end
+
+  io.write(color.green .. "\n  Semua aplikasi terdeteksi telah diproses.\n" .. color.reset)
+  pause()
 end
 
 local function open_fallback_link()
@@ -614,6 +698,8 @@ local function show_help()
   io.write(color.gray .. "  - Pastikan Roblox terpasang dan akun sudah masuk.\n" .. color.reset)
   io.write(color.gray .. "  - Root Window Grid hanya mengatur task Android yang telah terbuka.\n" .. color.reset)
   io.write(color.gray .. "    Jika ROM menolak resize, aktifkan freeform window pada pengaturan ROM Anda.\n" .. color.reset)
+  io.write(color.gray .. "  - Auto Detect Roblox Apps menemukan package dengan nama roblox/mercy, lalu\n" .. color.reset)
+  io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik. Hentikan dengan Ctrl+C.\n" .. color.reset)
   io.write(color.gray .. "  - Untuk rejoin dari pengalaman Anda sendiri, gunakan TeleportService di Roblox Studio.\n" .. color.reset)
   pause()
 end
@@ -633,10 +719,11 @@ while true do
   io.write(color.green .. " 7)" .. color.white .. " Help & Information\n" .. color.reset)
   io.write(color.green .. " 8)" .. color.white .. " Grid Dashboard & Settings\n" .. color.reset)
   io.write(color.green .. " 9)" .. color.white .. " Root Window Grid (Experimental)\n" .. color.reset)
-  io.write(color.red .. "10)" .. color.white .. " Exit\n\n" .. color.reset)
+  io.write(color.green .. "10)" .. color.white .. " Auto Detect Roblox Apps (60 sec delay)\n" .. color.reset)
+  io.write(color.red .. "11)" .. color.white .. " Exit\n\n" .. color.reset)
   io.write(color.gray .. " Place ID: " .. place_label .. " | Interval: " .. config.refresh_seconds .. " sec | Grid: " .. config.grid_columns .. " kolom\n\n" .. color.reset)
 
-  local choice = prompt(color.cyan .. "[?] Enter your choice [1-10]: " .. color.reset)
+  local choice = prompt(color.cyan .. "[?] Enter your choice [1-11]: " .. color.reset)
   if choice == "1" then
     setup_termux_dependencies()
   elseif choice == "2" then
@@ -660,6 +747,8 @@ while true do
   elseif choice == "9" then
     root_window_grid()
   elseif choice == "10" then
+    run_auto_detected_apps()
+  elseif choice == "11" then
     os.exit(0)
   else
     io.write(color.red .. "  Pilihan tidak tersedia.\n" .. color.reset)
