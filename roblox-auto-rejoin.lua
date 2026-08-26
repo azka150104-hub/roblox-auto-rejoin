@@ -58,7 +58,7 @@ local function write_banner()
   io.write(color.cyan .. "  M M M  O   O C     HHHHH   I   W W W\n" .. color.reset)
   io.write(color.cyan .. "  M   M  O   O C     H   H   I   WW WW\n" .. color.reset)
   io.write(color.cyan .. "  M   M   OOO   CCCC H   H IIIII W   W\n" .. color.reset)
-  io.write(color.gray .. "  Version 1.4.0 | " .. APP_NAME .. "\n\n" .. color.reset)
+  io.write(color.gray .. "  Version 1.5.0 | " .. APP_NAME .. "\n\n" .. color.reset)
   io.write(color.gray .. "  --------------------------------------------------------\n\n" .. color.reset)
 end
 
@@ -268,6 +268,15 @@ local function parse_task_ids(input)
   return ids
 end
 
+local function parse_grid_layout(input)
+  local columns, rows = (input or ""):match("^%s*(%d+)%s*[xX]%s*(%d+)%s*$")
+  columns, rows = tonumber(columns), tonumber(rows)
+  if not columns or not rows or columns < 1 or columns > 3 or rows < 1 or rows > 3 then
+    return nil
+  end
+  return columns, rows
+end
+
 local function activity_resize_supported()
   local help = capture_command("su -c " .. shell_quote("cmd activity help 2>&1"))
   return help:find("task", 1, true) ~= nil and help:find("resize", 1, true) ~= nil
@@ -303,6 +312,24 @@ local function apply_window_grid(task_ids, columns, rows)
     end
   end
   return true, string.format("%d task diatur ke grid %dx%d pada %dx%d.", #task_ids, columns, rows, width, height)
+end
+
+local function apply_auto_grid(columns, rows)
+  if not has_root_access() then
+    return false, "Akses root melalui su tidak tersedia atau ditolak."
+  end
+
+  -- Beri Android waktu menambahkan task saat aplikasi baru saja dibuka.
+  sleep(3)
+  local tasks = get_roblox_tasks()
+  local task_ids = {}
+  for _, task in ipairs(tasks) do
+    table.insert(task_ids, task.id)
+  end
+  if #task_ids == 0 then
+    return false, "Task Roblox belum terdeteksi. Buka aplikasinya lalu coba menu Auto Grid lagi."
+  end
+  return apply_window_grid(task_ids, columns, rows)
 end
 
 local function root_window_grid()
@@ -358,6 +385,31 @@ local function root_window_grid()
   end
 
   local success, message = apply_window_grid(task_ids, columns, rows)
+  if success then
+    io.write(color.green .. "  " .. message .. "\n" .. color.reset)
+  else
+    io.write(color.red .. "  " .. message .. "\n" .. color.reset)
+  end
+  pause()
+end
+
+local function run_auto_grid_open_apps()
+  write_banner()
+  io.write(color.cyan .. "  AUTO GRID JENDELA ROBLOX\n" .. color.reset)
+  io.write(color.gray .. "  Menata semua task Roblox yang sudah terbuka dengan root.\n" .. color.reset)
+  io.write(color.yellow .. "  Contoh 2x2 berarti 2 kolom dan 2 baris (maks. 4 jendela).\n\n" .. color.reset)
+
+  local columns, rows = parse_grid_layout(prompt("  Layout grid [contoh 2x2]: "))
+  if not columns then
+    io.write(color.red .. "  Format tidak valid. Gunakan 1x1 sampai 3x3, contoh 2x2.\n" .. color.reset)
+    pause()
+    return
+  end
+  if prompt("  Tata otomatis ke grid " .. columns .. "x" .. rows .. "? ketik YA: ") ~= "YA" then
+    return
+  end
+
+  local success, message = apply_auto_grid(columns, rows)
   if success then
     io.write(color.green .. "  " .. message .. "\n" .. color.reset)
   else
@@ -568,6 +620,16 @@ local function run_auto_detected_apps()
     io.write(color.green .. string.format("  %2d) %s\n", index, package_id) .. color.reset)
   end
   io.write("\n")
+  local layout_input = prompt("  Auto grid setelah semua terbuka [contoh 2x2 / Enter = lewati]: ")
+  local grid_columns, grid_rows
+  if layout_input ~= "" then
+    grid_columns, grid_rows = parse_grid_layout(layout_input)
+    if not grid_columns then
+      io.write(color.red .. "  Format grid tidak valid. Gunakan contoh 2x2 atau tekan Enter untuk lewati.\n" .. color.reset)
+      pause()
+      return
+    end
+  end
   if prompt("  Buka " .. #packages .. " aplikasi dengan jeda 60 detik? ketik YA: ") ~= "YA" then
     return
   end
@@ -584,6 +646,15 @@ local function run_auto_detected_apps()
     end
   end
 
+  if grid_columns then
+    io.write(color.gray .. "\n  Mendeteksi task untuk auto grid " .. grid_columns .. "x" .. grid_rows .. "...\n" .. color.reset)
+    local success, message = apply_auto_grid(grid_columns, grid_rows)
+    if success then
+      io.write(color.green .. "  " .. message .. "\n" .. color.reset)
+    else
+      io.write(color.red .. "  " .. message .. "\n" .. color.reset)
+    end
+  end
   io.write(color.green .. "\n  Semua aplikasi terdeteksi telah diproses.\n" .. color.reset)
   pause()
 end
@@ -699,7 +770,7 @@ local function show_help()
   io.write(color.gray .. "  - Root Window Grid hanya mengatur task Android yang telah terbuka.\n" .. color.reset)
   io.write(color.gray .. "    Jika ROM menolak resize, aktifkan freeform window pada pengaturan ROM Anda.\n" .. color.reset)
   io.write(color.gray .. "  - Auto Detect Roblox Apps menemukan package dengan nama roblox/mercy, lalu\n" .. color.reset)
-  io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik. Hentikan dengan Ctrl+C.\n" .. color.reset)
+  io.write(color.gray .. "    membuka tiap aplikasi dengan jeda 60 detik dan dapat menerapkan grid 2x2.\n" .. color.reset)
   io.write(color.gray .. "  - Untuk rejoin dari pengalaman Anda sendiri, gunakan TeleportService di Roblox Studio.\n" .. color.reset)
   pause()
 end
@@ -720,10 +791,11 @@ while true do
   io.write(color.green .. " 8)" .. color.white .. " Grid Dashboard & Settings\n" .. color.reset)
   io.write(color.green .. " 9)" .. color.white .. " Root Window Grid (Experimental)\n" .. color.reset)
   io.write(color.green .. "10)" .. color.white .. " Auto Detect Roblox Apps (60 sec delay)\n" .. color.reset)
-  io.write(color.red .. "11)" .. color.white .. " Exit\n\n" .. color.reset)
+  io.write(color.green .. "11)" .. color.white .. " Auto Grid Open Roblox Windows\n" .. color.reset)
+  io.write(color.red .. "12)" .. color.white .. " Exit\n\n" .. color.reset)
   io.write(color.gray .. " Place ID: " .. place_label .. " | Interval: " .. config.refresh_seconds .. " sec | Grid: " .. config.grid_columns .. " kolom\n\n" .. color.reset)
 
-  local choice = prompt(color.cyan .. "[?] Enter your choice [1-11]: " .. color.reset)
+  local choice = prompt(color.cyan .. "[?] Enter your choice [1-12]: " .. color.reset)
   if choice == "1" then
     setup_termux_dependencies()
   elseif choice == "2" then
@@ -749,6 +821,8 @@ while true do
   elseif choice == "10" then
     run_auto_detected_apps()
   elseif choice == "11" then
+    run_auto_grid_open_apps()
+  elseif choice == "12" then
     os.exit(0)
   else
     io.write(color.red .. "  Pilihan tidak tersedia.\n" .. color.reset)

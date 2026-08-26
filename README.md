@@ -24,6 +24,8 @@ Saat aplikasi terbuka:
 3. Pilih `3) Join Game Now` untuk membuka game.
 4. Pilih `10) Auto Detect Roblox Apps (60 sec delay)` untuk mendeteksi package
    Roblox/clone yang namanya memuat `roblox` atau `mercy`, lalu membukanya satu per satu.
+   Saat diminta layout, isi `2x2` agar task yang berhasil dideteksi dirapikan
+   otomatis setelah semua aplikasi dibuka (memerlukan root dan dukungan freeform ROM).
 
 ## Memperbarui dari GitHub
 
