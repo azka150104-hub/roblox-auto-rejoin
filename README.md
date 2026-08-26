@@ -57,3 +57,4 @@ lua5.3 roblox-auto-rejoin.lua
 - Jika hasil grid masih saling menimpa, window manager/freeform pihak ketiga pada perangkat
   kemungkinan mengambil alih ukuran jendela setelah skrip mengaturnya. Coba tutup atau nonaktifkan
   mode auto-resize pada window manager tersebut sebelum menjalankan menu `11`.
+- Deteksi task mendukung format `ActivityRecord` pada sebagian ROM Android, selain format task standar.

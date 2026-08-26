@@ -60,7 +60,7 @@ local function write_banner()
   io.write(color.cyan .. "  M M M  O   O C     HHHHH   I   W W W\n" .. color.reset)
   io.write(color.cyan .. "  M   M  O   O C     H   H   I   WW WW\n" .. color.reset)
   io.write(color.cyan .. "  M   M   OOO   CCCC H   H IIIII W   W\n" .. color.reset)
-  io.write(color.gray .. "  Version 1.8.0 | " .. APP_NAME .. "\n\n" .. color.reset)
+  io.write(color.gray .. "  Version 1.8.1 | " .. APP_NAME .. "\n\n" .. color.reset)
   io.write(color.gray .. "  --------------------------------------------------------\n\n" .. color.reset)
 end
 
@@ -251,6 +251,22 @@ local function get_roblox_tasks()
       end
     end
   end
+
+  -- Sebagian ROM menulis task seperti:
+  -- ActivityRecord{... u0 com.roblox.client/.MainActivity t27}
+  -- bukan Task{... A=com.roblox.client}. Baca kedua format tersebut.
+  for record in output:gmatch("ActivityRecord%{[^}\r\n]+%}") do
+    local task_id = record:match("%st(%d+)%s*}") or record:match("%st(%d+)%s")
+    local package_id = record:match("u%d+%s+([%w%._]+)/")
+    if task_id and package_id then
+      local is_configured = package_id == config.app_package
+      local is_roblox_named = package_id:lower():find("roblox", 1, true) ~= nil
+      if (is_configured or is_roblox_named) and not seen[task_id] then
+        seen[task_id] = true
+        table.insert(tasks, { id = task_id, package_id = package_id })
+      end
+    end
+  end
   return tasks
 end
 
@@ -283,6 +299,17 @@ local function get_visible_user_tasks()
     if task_id and package_id and is_visible
         and user_packages[package_id] and not excluded_packages[package_id]
         and not seen[task_id] then
+      seen[task_id] = true
+      table.insert(tasks, { id = task_id, package_id = package_id })
+    end
+  end
+
+  -- Fallback untuk ROM yang hanya mengekspos task melalui ActivityRecord.
+  for record in output:gmatch("ActivityRecord%{[^}\r\n]+%}") do
+    local task_id = record:match("%st(%d+)%s*}") or record:match("%st(%d+)%s")
+    local package_id = record:match("u%d+%s+([%w%._]+)/")
+    if task_id and package_id and user_packages[package_id]
+        and not excluded_packages[package_id] and not seen[task_id] then
       seen[task_id] = true
       table.insert(tasks, { id = task_id, package_id = package_id })
     end
